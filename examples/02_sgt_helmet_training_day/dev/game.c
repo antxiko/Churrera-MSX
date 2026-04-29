@@ -1,12 +1,19 @@
 // SG-1000 MK1 v0.4
 // Copyleft Mojon Twins 2013, 2015, 2017-2019
 
-// To generate a PAL version, 
+// To generate a PAL version,
 // 1.- build_assets.bat pal
 // 2.- make clean
 // 3.- uncoment:
 //#define PAL
 // 4.- compile.bat
+
+// MSX port: this repo's murcia.c only contains the m_p_* (PAL) PSG
+// data. Until build_assets.bat is run again to regenerate the NTSC
+// (m_n_*) variants, force PAL so the music symbols resolve.
+#ifdef MSX
+#define PAL
+#endif
 
 /*
 // Comment this when you are done
@@ -18,7 +25,10 @@
 //
 */
 
-#ifdef SMS
+#ifdef MSX
+	#include "hw_msx.h"
+	#include "lib/MSXlib.h"
+#elif defined(SMS)
 	#include "hw_sms.h"
 	#include "lib/SMSlib.h"
 	/*	

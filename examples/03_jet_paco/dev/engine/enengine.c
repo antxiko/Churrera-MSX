@@ -4,7 +4,10 @@
 // enengine.c
 // Enemies Engine & stuff
 
-#ifdef SMS
+#ifdef MSX
+	#include "../hw_msx.h"
+	#include "../lib/MSXlib.h"
+#elif defined(SMS)
 	#include "../hw_sms.h"
 	#include "../lib/SMSlib.h"
 #else

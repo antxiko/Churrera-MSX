@@ -1,0 +1,32 @@
+# SDCC build outputs
+*.rel
+*.asm
+*.lst
+*.sym
+*.ihx
+*.lk
+*.noi
+*.map
+*.d
+*.bak
+
+# Per-example build artifacts
+**/rel/
+**/build/
+**/work/
+
+# Final ROMs (kept under build/ via Makefile, but the loose ones from
+# the original SG-1000 toolchain are big and not needed in source tree)
+cart.rom
+cart.sg
+cart-NTSC.sg
+cart-NTSC.ssm
+cart-PAL.sg
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor junk
+*.swp
+*~

@@ -20,21 +20,28 @@
 
 #define MAX_BOLTS 16 // max 32, make it as small as possible.
 
-#ifdef SMS
+#ifdef MSX
+	#include "hw_msx.h"
+	#include "lib/MSXlib.h"
+	/*
+		MSX1 port v0.1 - MSXlib mirrors the SGlib-MT config with the
+		same AUTOCYCLE_SPRITES / AUTOCYCLE_PRIME / AUTOMUSIC etc.
+	*/
+#elif defined(SMS)
 	#include "hw_sms.h"
 	#include "lib/SMSlib.h"
-	/*	
+	/*
 		SG-1000 MK1 v0.1 M4 needs the custom SMSlibMin-MT configured with
 		#define AUTOCYCLE_SPRITES				// Sprites cycle automaticly
 		#define AUTOCYCLE_PRIME			7		// Prime to 64.
-		#define AUTOCYCLE_INIT_PRIME 	3		// Prime to 64.		
+		#define AUTOCYCLE_INIT_PRIME 	3		// Prime to 64.
 		#define AUTOMUSIC						// ISR calls PSGPlay and PSGSFXPlay
 		#define ONLY_ONE_CONTROLLER
 	*/
 #else
 	#include "hw_sg1000.h"
 	#include "lib/SGlib.h"
-	/*	
+	/*
 		SG-1000 MK1 v0.1 needs the custom SGlib-MT configured with
 		#define AUTOCYCLE_SPRITES				// Sprites cycle automaticly
 		#define AUTOCYCLE_PRIME			3		// Prime to 32.

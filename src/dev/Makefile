@@ -1,142 +1,137 @@
-.PHONY: clean 
+# Makefile - dual target: SG-1000 (cart.sg) or MSX1 (cart.rom)
+#
+# Usage:
+#   make                    -> SG-1000 (default, cart.sg, original flow)
+#   make TARGET=sg1000      -> SG-1000 explicit
+#   make TARGET=msx         -> MSX1 48 KB ROM (cart.rom)
+#   make clean              -> wipe both
+#
+# The MSX flow uses 'sdcc' + 'makebin' (no .exe), suitable for macOS/Linux.
+# The SG-1000 flow keeps the original Mojon Twins toolchain (sdcc.exe + ihx2sms).
 
-CC = sdcc.exe
-CFLAGS = -c -mz80 --peep-file lib/peep-rules.txt --peep-asm
-SOURCES = engine/breakable.c engine/cocos.c engine/enengine.c engine/general.c engine/player.c engine/printer.c engine/propellers.c engine/tile_chac_chac.c lib/aPLib.c lib/PSGlib.c utils/delay.c utils/memfill.c utils/rand.c utils/unpacker.c utils/unrle.c game.c murcia.c
+# default target must come before any auto-generated rules (COMPILEC eval)
+.PHONY: all
+all:
 
-all: cart.sg
+SRCDIR  = .
+OBJDIR  = rel
+TARGET ?= sg1000
 
-cart.sg: cart.ihx 
-	../utils/ihx2sms.exe cart.ihx cart.sg
+# ---------------------- per-target settings ----------------------
+ifeq ($(TARGET),msx)
+    CC       = sdcc
+    AS       = sdasz80
+    DEFS     = -DMSX
+    LIB_SRC  = lib/MSXlib.c lib/PSGlib_msx.c lib/aPLib_msx.c
+    CRT0_SRC = lib/crt0_msx.s
+    CRT0_REL = lib/crt0_msx.rel
+    LIB_REL  = lib/MSXlib.rel lib/PSGlib_msx.rel lib/aPLib_msx.rel
+    # MSX 48 KB plain ROM: vectors page 0, header at $4000, code in pg 1+2.
+    # Assets go in _DATA_BANK at $0080 (page 0, ~16 KB) so total code+data
+    # fits in 48 KB without a mapper.
+    LFLAGS   = -mz80 --no-std-crt0 --code-loc 0x4000 --data-loc 0xC000 -Wl-b_DATA_BANK=0x0100
+    OUTPUT   = cart.rom
+else
+    CC       = sdcc
+    AS       = sdasz80
+    DEFS     =
+    LIB_SRC  = lib/PSGlib.c lib/SGlib.c lib/aPLib.c
+    CRT0_SRC = lib/crt0_sg.s
+    CRT0_REL = lib/crt0_sg.rel
+    LIB_REL  = lib/PSGlib.rel lib/SGlib.rel lib/aPLib.rel
+    LFLAGS   = -mz80 --no-std-crt0 --data-loc 0xC000
+    OUTPUT   = cart.sg
+endif
 
-cart.ihx: rel/game.rel rel/utils/rand.rel rel/utils/delay.rel rel/utils/memfill.rel rel/utils/unpacker.rel rel/utils/unrle.rel rel/engine/propellers.rel rel/engine/tile_chac_chac.rel rel/engine/printer.rel rel/engine/general.rel rel/engine/breakable.rel rel/engine/player.rel rel/engine/cocos.rel rel/engine/enengine.rel rel/assets/enems0.rel rel/assets/enems1.rel rel/assets/enems2.rel rel/assets/map0.rel rel/assets/map1.rel rel/assets/map2.rel rel/assets/tileset.rel rel/assets/spriteset.rel rel/murcia.rel lib/PSGlib.rel lib/SGlib.rel lib/aPLib.rel lib/crt0_sg.rel
-	$(CC) -o cart.ihx -mz80 --no-std-crt0 --data-loc 0xC000 lib/crt0_sg.rel rel/game.rel rel/utils/rand.rel rel/utils/delay.rel rel/utils/memfill.rel rel/utils/unpacker.rel rel/utils/unrle.rel rel/engine/propellers.rel rel/engine/tile_chac_chac.rel rel/engine/printer.rel rel/engine/general.rel rel/engine/breakable.rel rel/engine/player.rel rel/engine/cocos.rel rel/engine/enengine.rel rel/assets/enems0.rel rel/assets/enems1.rel rel/assets/enems2.rel rel/assets/map0.rel rel/assets/map1.rel rel/assets/map2.rel rel/assets/tileset.rel rel/assets/spriteset.rel rel/murcia.rel lib/PSGlib.rel lib/SGlib.rel lib/aPLib.rel
+CFLAGS = -mz80 --peep-file lib/peep-rules.txt --peep-asm $(DEFS)
 
-lib/crt0_sg.rel:  lib/crt0_sg.s
-	sdasz80 -g -o lib/crt0_sg.rel lib/crt0_sg.s
-	
-lib/PSGlib.rel: lib/PSGlib.c
-	$(CC) -c -mz80 --peep-file lib/peep-rules.txt lib/PSGlib.c -o lib/PSGlib.rel
+# ---------------------- source discovery ----------------------
+# C sources from the project (excluding lib/, which is per-target).
+SRC := $(wildcard $(SRCDIR)/*.c) \
+       $(wildcard $(SRCDIR)/assets/*.c) \
+       $(wildcard $(SRCDIR)/engine/*.c) \
+       $(wildcard $(SRCDIR)/utils/*.c)
+OBJ := $(patsubst $(SRCDIR)%, $(OBJDIR)%, $(SRC:%.c=%.rel))
+DEP := $(patsubst $(SRCDIR)%, $(OBJDIR)%, $(SRC:%.c=%.d))
 
-lib/SGlib.rel: lib/SGlib.c
-	$(CC) -c -mz80 --peep-file lib/peep-rules.txt lib/SGlib.c -o lib/SGlib.rel
+# ---------------------- per-source compile rule ----------------------
+# For MSX target, assets/*.c go in a separate code segment (_DATA_BANK)
+# placed at $0080 by the linker, so they live in ROM page 0.
+ifeq ($(TARGET),msx)
+ASSETS_FLAGS = --codeseg DATA_BANK
+else
+ASSETS_FLAGS =
+endif
 
-lib/aPLib.rel: lib/aPLib.c
-	$(CC) -c -mz80 --peep-file lib/peep-rules.txt lib/aPLib.c -o lib/aPLib.rel
+define COMPILEC
+$(1): $(2)
+	mkdir -p $$(dir $(1))
+	$(CC) $(CFLAGS) -M $(2) -o $(3)
+	sed -i.bak -E "s/(.+)\.rel/$$(subst /,\/,$$(dir $(1)))\1.rel/" $(3) && rm -f $(3).bak
+	$(CC) $(CFLAGS) $(if $(filter assets/map% assets/tileset% assets/spriteset%,$(patsubst ./%,%,$(2))),$(ASSETS_FLAGS)) -c $(2) -o $(1)
+endef
 
-rel/assets/enems0.rel: assets/enems0.c
-	$(CC) $(CFLAGS) assets/enems0.c -o rel/assets/enems0.rel
+$(foreach OBJF, $(OBJ), $(eval $(call COMPILEC, $(OBJF), $(patsubst $(OBJDIR)%, $(SRCDIR)%, $(OBJF:%.rel=%.c)), $(OBJF:%.rel=%.d))))
 
-rel/assets/enems1.rel: assets/enems1.c
-	$(CC) $(CFLAGS) assets/enems1.c -o rel/assets/enems1.rel
+-include $(DEP)
 
-rel/assets/enems2.rel: assets/enems2.c
-	$(CC) $(CFLAGS) assets/enems2.c -o rel/assets/enems2.rel 
+# ---------------------- top-level targets ----------------------
+.PHONY: clean msx sg1000
 
-rel/assets/map0.rel: assets/map0.c
-	$(CC) $(CFLAGS) assets/map0.c -o rel/assets/map0.rel 
+all: $(OUTPUT)
 
-rel/assets/map1.rel: assets/map1.c
-	$(CC) $(CFLAGS) assets/map1.c -o rel/assets/map1.rel 
+msx:
+	$(MAKE) TARGET=msx
 
-rel/assets/map2.rel: assets/map2.c
-	$(CC) $(CFLAGS) assets/map2.c -o rel/assets/map2.rel
+sg1000:
+	$(MAKE) TARGET=sg1000
 
-rel/assets/tileset.rel: assets/tileset.c
-	$(CC) $(CFLAGS) assets/tileset.c -o rel/assets/tileset.rel
+# ---------------------- linking ----------------------
+$(CRT0_REL): $(CRT0_SRC)
+	$(AS) -g -o $@ $<
 
-rel/assets/spriteset.rel: assets/spriteset.c
-	$(CC) $(CFLAGS) assets/spriteset.c -o rel/assets/spriteset.rel
+lib/MSXlib.rel: lib/MSXlib.c lib/MSXlib.h lib/PSGlib.h
+	$(CC) $(CFLAGS) -c lib/MSXlib.c -o lib/MSXlib.rel
 
-rel/murcia.rel: murcia.c
-	$(CC) $(CFLAGS) murcia.c -o rel/murcia.rel
+lib/PSGlib_msx.rel: lib/PSGlib_msx.c lib/PSGlib.h lib/MSXlib.h
+	$(CC) $(CFLAGS) -c lib/PSGlib_msx.c -o lib/PSGlib_msx.rel
 
-rel/utils/rand.rel: utils/rand.c
-	$(CC) $(CFLAGS) utils/rand.c -o rel/utils/rand.rel
+lib/SGlib.rel: lib/SGlib.c lib/SGlib.h lib/PSGlib.h
+	$(CC) $(CFLAGS) -c lib/SGlib.c -o lib/SGlib.rel
 
-rel/utils/delay.rel: utils/delay.c
-	$(CC) $(CFLAGS) utils/delay.c -o rel/utils/delay.rel
+lib/PSGlib.rel: lib/PSGlib.c lib/PSGlib.h
+	$(CC) $(CFLAGS) -c lib/PSGlib.c -o lib/PSGlib.rel
 
-rel/utils/memfill.rel: utils/memfill.c
-	$(CC) $(CFLAGS) utils/memfill.c -o rel/utils/memfill.rel
+lib/aPLib.rel: lib/aPLib.c lib/aPLib.h
+	$(CC) $(CFLAGS) -c lib/aPLib.c -o lib/aPLib.rel
 
-rel/utils/unpacker.rel: utils/unpacker.c
-	$(CC) $(CFLAGS) utils/unpacker.c -o rel/utils/unpacker.rel
+lib/aPLib_msx.rel: lib/aPLib_msx.c lib/aPLib.h
+	$(CC) -mz80 --peep-file lib/peep-rules.txt $(DEFS) -c lib/aPLib_msx.c -o lib/aPLib_msx.rel
 
-rel/utils/unrle.rel: utils/unrle.c
-	$(CC) $(CFLAGS) utils/unrle.c -o rel/utils/unrle.rel
+cart.ihx: $(OBJ) $(CRT0_REL) $(LIB_REL)
+	$(CC) -o cart.ihx $(LFLAGS) $(CRT0_REL) $(OBJ) $(LIB_REL)
 
-rel/engine/printer.rel: engine/printer.c
-	$(CC) $(CFLAGS) engine/printer.c -o rel/engine/printer.rel
+# ---------------------- post-processing ----------------------
+ifeq ($(TARGET),msx)
+BUILD_PREFIX ?= MURCIA
 
-rel/engine/propellers.rel: engine/propellers.c
-	$(CC) $(CFLAGS) engine/propellers.c -o rel/engine/propellers.rel
+cart.rom: cart.ihx
+	makebin -s 65536 cart.ihx cart.rom
+	@mkdir -p build
+	@N=$$(ls build/$(BUILD_PREFIX)*.rom 2>/dev/null | sed -E "s/.*$(BUILD_PREFIX)([0-9]+)\.rom/\1/" | sort -n | tail -1); \
+	 N=$${N:-0}; \
+	 N=$$((10#$$N + 1)); \
+	 NAME=$$(printf "build/$(BUILD_PREFIX)%02d.rom" $$N); \
+	 cp cart.rom $$NAME; \
+	 echo ">>> built $$NAME (md5 $$(md5 -q cart.rom 2>/dev/null || md5sum cart.rom | cut -d' ' -f1))"
+	@rm -f cart.lk cart.noi cart.ihx
+else
+cart.sg: cart.ihx
+	../../../src/utils/ihx2sms.exe cart.ihx cart.sg
+	@rm -f cart.lk cart.noi cart.map cart.ihx
+endif
 
-rel/engine/tile_chac_chac.rel: engine/tile_chac_chac.c
-	$(CC) $(CFLAGS) engine/tile_chac_chac.c -o rel/engine/tile_chac_chac.rel
-
-rel/engine/player.rel: engine/player.c
-	$(CC) $(CFLAGS) engine/player.c -o rel/engine/player.rel
-
-rel/engine/enengine.rel: engine/enengine.c
-	$(CC) $(CFLAGS) engine/enengine.c -o rel/engine/enengine.rel
-
-rel/engine/general.rel: engine/general.c
-	$(CC) $(CFLAGS) engine/general.c -o rel/engine/general.rel
-
-rel/engine/cocos.rel: engine/cocos.c
-	$(CC) $(CFLAGS) engine/cocos.c -o rel/engine/cocos.rel
-
-rel/engine/breakable.rel: engine/breakable.c
-	$(CC) $(CFLAGS) engine/breakable.c -o rel/engine/breakable.rel
-
-rel/game.rel: game.c
-	$(CC) $(CFLAGS) game.c -o rel/game.rel 
-
-depend:
-	makedepend -o.rel -prel/ -- $(CFLAGS) -- $(SOURCES)
-
-clean: 
-	-rm -f rel/*.rel lib/*.rel rel/assets/*.rel rel/engine/*.rel rel/utils/*.rel cart.sg
-# DO NOT DELETE
-
-rel/engine/breakable.rel: lib/SGlib.h lib/PSGlib.h definitions.h config.h
-rel/engine/breakable.rel: autodefs.h murcia.h ram/extern_globals.h
-rel/engine/breakable.rel: engine/extern_precalcs.h engine/printer.h
-rel/engine/cocos.rel: lib/SGlib.h lib/PSGlib.h murcia.h definitions.h
-rel/engine/cocos.rel: config.h autodefs.h ram/extern_globals.h
-rel/engine/cocos.rel: engine/extern_precalcs.h engine/extern_metasprites.h
-rel/engine/enengine.rel: lib/SGlib.h lib/PSGlib.h murcia.h definitions.h
-rel/engine/enengine.rel: config.h autodefs.h ram/extern_globals.h
-rel/engine/enengine.rel: engine/extern_precalcs.h engine/extern_metasprites.h
-rel/engine/enengine.rel: utils/memfill.h utils/rand.h engine/player.h
-rel/engine/enengine.rel: engine/general.h engine/cocos.h
-rel/engine/general.rel: lib/SGlib.h lib/PSGlib.h definitions.h config.h
-rel/engine/general.rel: autodefs.h ram/extern_globals.h
-rel/engine/general.rel: engine/extern_precalcs.h engine/printer.h murcia.h
-rel/engine/player.rel: lib/SGlib.h lib/PSGlib.h murcia.h definitions.h
-rel/engine/player.rel: config.h autodefs.h ram/extern_globals.h
-rel/engine/player.rel: engine/extern_precalcs.h engine/extern_metasprites.h
-rel/engine/player.rel: utils/delay.h engine/printer.h engine/general.h
-rel/engine/player.rel: engine/breakable.h
-rel/engine/printer.rel: lib/SGlib.h definitions.h config.h autodefs.h
-rel/engine/printer.rel: ram/extern_globals.h utils/rand.h utils/memfill.h
-rel/engine/printer.rel: utils/delay.h engine/propellers.h
-rel/engine/printer.rel: engine/tile_chac_chac.h engine/printer.h
-rel/engine/propellers.rel: definitions.h config.h autodefs.h
-rel/engine/tile_chac_chac.rel: lib/PSGlib.h murcia.h definitions.h config.h
-rel/engine/tile_chac_chac.rel: autodefs.h
-rel/lib/PSGlib.rel: lib/PSGlib.h
-rel/utils/delay.rel: lib/SGlib.h
-rel/utils/unpacker.rel: lib/aPLib.h lib/SGlib.h
-rel/utils/unrle.rel: lib/SGlib.h ram/extern_globals.h
-rel/game.rel: lib/SGlib.h lib/PSGlib.h lib/aPLib.h utils/rand.h utils/delay.h
-rel/game.rel: utils/memfill.h utils/unpacker.h utils/unrle.h definitions.h
-rel/game.rel: config.h autodefs.h murcia.h assets/behs.h assets/map0.h
-rel/game.rel: assets/enems0.h assets/map1.h assets/enems1.h assets/map2.h
-rel/game.rel: assets/enems2.h assets/spriteset.h assets/tileset.h
-rel/game.rel: assets/metasprites.h assets/custom_texts.h engine/prototypes.h
-rel/game.rel: engine/printer.h engine/general.h my/extra_modules.h
-rel/game.rel: engine/hotspots.h engine/player.h engine/enengine.h
-rel/game.rel: engine/frame.h my/game_frame.h my/extra_hud_update.h my/pres.h
-rel/game.rel: mainloop/flickscreen.h mainloop.h
+# ---------------------- cleanup ----------------------
+clean:
+	@rm -rf $(OBJDIR) cart.sg cart.rom cart.ihx cart.lk cart.noi cart.map
+	@rm -f lib/*.rel

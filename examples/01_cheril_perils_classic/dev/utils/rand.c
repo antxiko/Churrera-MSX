@@ -13,7 +13,7 @@ unsigned char randres;
 #pragma disable_warning 85
 unsigned char rand8 (void) {
 	__asm
-		rnd:
+		rnd::
 			ld  hl, (_seed1)
 			ld  de, (_seed2)
 	        ld  a,h         ; t = x ^ (x << 1)

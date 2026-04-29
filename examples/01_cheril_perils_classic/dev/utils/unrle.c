@@ -1,12 +1,15 @@
 // SG-1000 MK1 v0.4
 // Copyleft Mojon Twins 2013, 2015, 2017, 2018
 
-#ifdef SMS
+#ifdef MSX
+	#include "../hw_msx.h"
+	#include "../lib/MSXlib.h"
+#elif defined(SMS)
 	#include "../hw_sms.h"
 	#include "../lib/SMSlib.h"
 #else
 	#include "../hw_sg1000.h"
-	#include "../lib/SGlib.h"	
+	#include "../lib/SGlib.h"
 #endif
 #include "../ram/extern_globals.h"
 
