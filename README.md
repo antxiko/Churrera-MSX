@@ -15,6 +15,11 @@
 * **Bug fixes that affect both targets**:
   - `utils/rand.c`: `rnd:` → `rnd::` (SDCC 4.x export).
   - `utils/memfill.c`: rewritten for SDCC's `__sdcccall(1)` default. The legacy version was reading garbage from the stack and producing huge `LDIR` runs — fixing this single bug recovered a ~10× speed regression.
+* **PSGlib_msx audio fixes (v1.0.1)**:
+  - Mirror state for `mixer` / `ay_vol[]` / `noise_vol` now has explicit C initialisers (`0xBF`, `15`, `15`) so it starts in a sane state at boot instead of all-zero (which means *max volume* in SN attenuation and *all channels open* in the AY mixer — the music sounded like noise until the first `PSGStop` reset it).
+  - Music keeps its tone/period/volume mirrors in sync even while a SFX has reserved a channel; when the SFX releases the channel, `restore_music_channel()` plays the music's intended note back immediately.
+  - `ay_write` is no longer DI/EI-bracketed (it's called from the ISR); main-thread API entries (`PSGPlay`, `PSGStop`, `PSGSFXPlay`, `PSGSFXStop`, `PSGSilence`) wrap their whole bodies in DI/EI instead.
+  - Noise volume is mapped through a separate (lower) curve so percussion doesn't dominate the mix — AY-3-8910 sums noise + ch C tone into the same amplitude register, which without this cap makes melodic notes in ch 2 sound like FX.
 
 ## Quick start
 

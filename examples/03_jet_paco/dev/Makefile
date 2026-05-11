@@ -68,7 +68,7 @@ $(1): $(2)
 	mkdir -p $$(dir $(1))
 	$(CC) $(CFLAGS) -M $(2) -o $(3)
 	sed -i.bak -E "s/(.+)\.rel/$$(subst /,\/,$$(dir $(1)))\1.rel/" $(3) && rm -f $(3).bak
-	$(CC) $(CFLAGS) $(if $(filter assets/map% assets/tileset% assets/spriteset%,$(patsubst ./%,%,$(2))),$(ASSETS_FLAGS)) -c $(2) -o $(1)
+	$(CC) $(CFLAGS) $(if $(filter assets/map% assets/tileset% assets/spriteset% assets/enems0% assets/enems1%,$(patsubst ./%,%,$(2))),$(ASSETS_FLAGS)) -c $(2) -o $(1)
 endef
 
 $(foreach OBJF, $(OBJ), $(eval $(call COMPILEC, $(OBJF), $(patsubst $(OBJDIR)%, $(SRCDIR)%, $(OBJF:%.rel=%.c)), $(OBJF:%.rel=%.d))))
